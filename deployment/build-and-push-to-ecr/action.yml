@@ -1,0 +1,59 @@
+name: "Build and Push Image to ECR"
+description: "Builds, tags, and pushes Docker image to ECR"
+inputs:
+  ecr-repository:
+    description: "Name of repository in ECR to push to"
+    required: true
+  aws-access-key-id: 
+    required: true
+  aws-secret-access-key:
+    required: true
+  aws-region:
+    required: true
+outputs:
+  image:
+    description: "The URI for the Docker image in ECR"
+    value: ${{ steps.build-image.outputs.image }}
+runs:
+  using: "composite"
+  steps:
+    - name: Configure CI credentials
+      id: configure_init_creds
+      uses: aws-actions/configure-aws-credentials@v1
+      with:
+        aws-access-key-id: ${{ inputs.aws-access-key-id }}
+        aws-secret-access-key: ${{ inputs.aws-secret-access-key }}
+        aws-region: ${{ inputs.aws-region }}
+
+    - name: Login to Amazon ECR
+      id: login-ecr
+      uses: aws-actions/amazon-ecr-login@v1
+
+    - name: Create ECR Repo if it doesn't exist
+      id: create-ecr-repo
+      run: aws ecr describe-repositories --repository-nmes ${{ inputs.ecr-repository }} || aws ecr create-repository --repository-name ${{ inputs.ecr-repository }}
+      shell: bash
+
+    - name: Pull Docker Base Image Cache
+      env:
+        ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+        IMAGE_TAG: ${{ github.sha }}
+        MAIN_BRANCH: main
+      run: |
+        export BRANCH_TAG=$(echo ${GITHUB_REF#refs/heads/} | sed 's/\//_/g' | sed 's/\\/_/g')
+        CACHE_TAG=$BRANCH_TAG
+        docker pull ${AWS_REGISTRY_URL}/$ECR_REGISTRY:$CACHE_TAG || export CACHE_TAG=$MAIN_BRANCH && docker pull ${AWS_REGISTRY_URL}/$ECR_REGISTRY:$CACHE_TAG || true
+      shell: bash
+
+    - name: Build, tag, and push image to Amazon ECR
+      id: build-image
+      env:
+        ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+        IMAGE_TAG: ${{ github.sha }}
+      run: |
+        export BRANCH_TAG=$(echo ${GITHUB_REF#refs/heads/} | sed 's/\//_/g' | sed 's/\\/_/g')
+        docker build  --cache-from ${AWS_REGISTRY_URL}/${{ inputs.ecr-repository }}:$CACHE_TAG -t $ECR_REGISTRY/${{ inputs.ecr-repository }}:$IMAGE_TAG -t $ECR_REGISTRY/${{ inputs.ecr-repository }}:$BRANCH_TAG .
+        docker push $ECR_REGISTRY/${{ inputs.ecr-repository }}:$IMAGE_TAG
+        docker push $ECR_REGISTRY/${{ inputs.ecr-repository }}:$BRANCH_TAG
+        echo "::set-output name=image::$ECR_REGISTRY/${{ inputs.ecr-repository }}:$IMAGE_TAG"
+      shell: bash
