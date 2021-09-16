@@ -1,0 +1,25 @@
+name: "Tear Down Automation Role"
+description: "Destroys the cloudformation stack as a clean up after using an assumed automation role"
+inputs:
+  service-key:
+    description: "The name of the service which will be used to identify stacks and resources"
+  aws-access-key-id: 
+    required: true
+  aws-secret-access-key:
+    required: true
+  aws-region:
+    required: true
+runs:
+  using: "composite"
+  steps:
+    - name: Configure CI credentials
+      id: configure_init_creds
+      uses: aws-actions/configure-aws-credentials@v1
+      with:
+        aws-access-key-id: ${{ inputs.aws-access-key-id }}
+        aws-secret-access-key: ${{ inputs.aws-secret-access-key }}
+        aws-region: ${{ inputs.aws-region }}
+    
+    - name: Tear Down Automation Role
+      run: aws cloudformation delete-stack --stack-name ${{ inputs.service-key }}-automation-stack
+      
