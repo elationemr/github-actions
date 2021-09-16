@@ -22,4 +22,4 @@ runs:
     
     - name: Tear Down Automation Role
       run: aws cloudformation delete-stack --stack-name ${{ inputs.service-key }}-automation-stack
-      
+      shell: bash
