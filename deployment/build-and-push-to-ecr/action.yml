@@ -31,7 +31,7 @@ runs:
 
     - name: Create ECR Repo if it doesn't exist
       id: create-ecr-repo
-      run: aws ecr describe-repositories --repository-nmes ${{ inputs.ecr-repository }} || aws ecr create-repository --repository-name ${{ inputs.ecr-repository }}
+      run: aws ecr describe-repositories --repository-names ${{ inputs.ecr-repository }} || aws ecr create-repository --repository-name ${{ inputs.ecr-repository }}
       shell: bash
 
     - name: Pull Docker Base Image Cache
