@@ -1,0 +1,46 @@
+name: "Assume Automation Role"
+description: "Creates and assumes an automation role from a cloudformation template file"
+inputs:
+  role-template:
+    description: "Cloudformation file that defines the template to be assumed"
+    required: true
+  service-key:
+    description: "The name of the service which will be used to identify stacks and resources"
+  aws-access-key-id: 
+    required: true
+  aws-secret-access-key:
+    required: true
+  aws-region:
+    required: true
+runs:
+  using: "composite"
+  steps:
+    - name: Configure CI credentials
+      id: configure_init_creds
+      uses: aws-actions/configure-aws-credentials@v1
+      with:
+        aws-access-key-id: ${{ inputs.aws-access-key-id }}
+        aws-secret-access-key: ${{ inputs.aws-secret-access-key }}
+        aws-region: ${{ inputs.aws-region }}
+    
+    - name: Spin up Automation Role
+      id: create_automation_role
+      uses: aws-actions/aws-cloudformation-github-deploy@v1
+      with:
+        name: ${{ inputs.service-key }}-automation-stack
+        template: ${{ inputs.role-template }}
+        capabilities: "CAPABILITY_IAM,CAPABILITY_NAMED_IAM"
+        no-fail-on-empty-changeset: "1"
+        parameter-overrides: >-
+          AutomationRoleKey=${{ inputs.service-key }} 
+    
+    - name: Assume Automation Role
+      uses: aws-actions/configure-aws-credentials@v1
+      with:
+        aws-access-key-id: ${{ inputs.aws-access-key-id }}
+        aws-secret-access-key: ${{ inputs.aws-secret-access-key }}
+        aws-region: ${{ inputs.aws-region }}
+        role-to-assume: ${{ inputs.service-key }}-automation-role
+        role-skip-session-tagging: true
+        role-duration-seconds: 1200
+        role-session-name: automation-session
