@@ -4,6 +4,8 @@ inputs:
   role-template:
     description: "Cloudformation file that defines the template to be assumed"
     required: true
+  environment:
+    required: true
   service-key:
     description: "The name of the service which will be used to identify stacks and resources"
   aws-access-key-id: 
@@ -27,12 +29,13 @@ runs:
       id: create_automation_role
       uses: aws-actions/aws-cloudformation-github-deploy@v1
       with:
-        name: ${{ inputs.service-key }}-automation-stack
+        name: ${{ inputs.environment }}-${{ inputs.service-key }}-automation-stack
         template: ${{ inputs.role-template }}
         capabilities: "CAPABILITY_IAM,CAPABILITY_NAMED_IAM"
         no-fail-on-empty-changeset: "1"
         parameter-overrides: >-
-          AutomationRoleKey=${{ inputs.service-key }} 
+          AutomationRoleKey=${{ inputs.service-key }},
+          Environment=${{ inputs.environment }}
     
     - name: Assume Automation Role
       uses: aws-actions/configure-aws-credentials@v1
