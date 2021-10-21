@@ -1,0 +1,65 @@
+name: Publish python package to CodeArtifact
+description: Given a python repository with a setup.py file, build and upload the python package to CodeArtifact
+
+inputs:
+  aws-access-key-id:
+    description: "The AWS access key ID used to connect to CodeArtifact"
+    required: true
+  aws-secret-access-key:
+    description: "The AWS secret access key used to connect to CodeArtifact"
+    required: true
+  codeartifact-domain:
+    description: "The domain that the CodeArtifact repository lives in"
+    required: true
+  codeartifact-domain-owner:
+    description: "The domain owner for the domain that the CodeArtifact repository lives in"
+    required: true
+  codeartifact-repository:
+    description: "The name of the CodeArtifact repository"
+    required: true
+  codeartifact-region:
+    description: "The AWS region where the CodeArtifact repository lives"
+    required: true
+  dist-dir:
+    description: "The directory where the built python package that we will publish is"
+    required: false
+    default: "dist"
+
+runs:
+  using: composite
+  steps:
+    - name: Check out git repo
+      uses: actions/checkout@v2
+
+    - name: Configure AWS credentials
+      uses: aws-actions/configure-aws-credentials@v1
+      with:
+        aws-access-key-id: ${{ inputs.aws-access-key-id }}
+        aws-secret-access-key: ${{ inputs.aws-secret-access-key }}
+        aws-region: ${{ inputs.codeartifact-region }}
+
+    - name: Set up python environment
+      uses: actions/setup-python@v2
+      with:
+        python-version: 3.9
+
+    - name: Install twine
+      run: pip install twine
+      shell: bash
+
+    - name: Configure twine to connect to CodeArtifact repo
+      run: |
+        aws codeartifact login --tool twine \
+        --domain ${{ inputs.codeartifact-domain }} \
+        --domain-owner ${{ inputs.codeartifact-domain-owner }} \
+        --repository ${{ inputs.codeartifact-repository }} \
+        --region ${{ inputs.codeartifact-region }}
+      shell: bash
+
+    - name: Build distribution package
+      run: python setup.py sdist --dist-dir ${{ inputs.dist-dir }}
+      shell: bash
+
+    - name: Publish distribution package to CodeArtifact
+      run: twine upload --repository codeartifact ${{ inputs.dist-dir }}/*
+      shell: bash
