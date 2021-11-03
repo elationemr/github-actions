@@ -14,6 +14,9 @@ outputs:
   image:
     description: "The URI for the Docker image in ECR"
     value: ${{ steps.build-image.outputs.image }}
+  image_tag:
+    description: "The tag based on gitsha that the image is tagged with in ECR"
+    value: ${{ steps.build-image.outputs.image_tag }}
 runs:
   using: "composite"
   steps:
@@ -56,4 +59,5 @@ runs:
         docker push $ECR_REGISTRY/${{ inputs.ecr-repository }}:$IMAGE_TAG
         docker push $ECR_REGISTRY/${{ inputs.ecr-repository }}:$BRANCH_TAG
         echo "::set-output name=image::$ECR_REGISTRY/${{ inputs.ecr-repository }}:$IMAGE_TAG"
+        echo "::set-output name=image_tag::$IMAGE_TAG"
       shell: bash
