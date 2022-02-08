@@ -55,7 +55,7 @@ runs:
         IMAGE_TAG: ${{ github.sha }}
       run: |
         export BRANCH_TAG=$(echo ${GITHUB_REF#refs/heads/} | sed 's/\//_/g' | sed 's/\\/_/g')
-        docker build  --cache-from ${AWS_REGISTRY_URL}/${{ inputs.ecr-repository }}:$CACHE_TAG -t $ECR_REGISTRY/${{ inputs.ecr-repository }}:$IMAGE_TAG -t $ECR_REGISTRY/${{ inputs.ecr-repository }}:$BRANCH_TAG .
+        docker build --build-arg AWS_ACCESS_KEY_ID=${{ inputs.aws-access-key-id }} --build-arg AWS_SECRET_ACCESS_KEY=${{ inputs.aws-secret-access-key }} --build-arg AWS_DEFAULT_REGION=${{ inputs.aws-region }} --cache-from ${AWS_REGISTRY_URL}/${{ inputs.ecr-repository }}:$CACHE_TAG -t $ECR_REGISTRY/${{ inputs.ecr-repository }}:$IMAGE_TAG -t $ECR_REGISTRY/${{ inputs.ecr-repository }}:$BRANCH_TAG .
         docker push $ECR_REGISTRY/${{ inputs.ecr-repository }}:$IMAGE_TAG
         docker push $ECR_REGISTRY/${{ inputs.ecr-repository }}:$BRANCH_TAG
         echo "::set-output name=image::$ECR_REGISTRY/${{ inputs.ecr-repository }}:$IMAGE_TAG"
