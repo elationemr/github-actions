@@ -17,6 +17,9 @@ outputs:
   image_tag:
     description: "The tag based on gitsha that the image is tagged with in ECR"
     value: ${{ steps.build-image.outputs.image_tag }}
+  repo_created:
+    description: "If the ECR repo was created."
+    value: ${{ steps.create-ecr-repo.outputs.repo_created }}
 runs:
   using: "composite"
   steps:
@@ -34,7 +37,7 @@ runs:
 
     - name: Create ECR Repo if it doesn't exist
       id: create-ecr-repo
-      run: aws ecr describe-repositories --repository-names ${{ inputs.ecr-repository }} || aws ecr create-repository --repository-name ${{ inputs.ecr-repository }}
+      run: (aws ecr describe-repositories --repository-names ${{ inputs.ecr-repository }} && echo "::set-output name=repo_created::$(echo 0)") || (aws ecr create-repository --repository-name ${{ inputs.ecr-repository }} && echo "::set-output name=repo_created::$(echo 1)")
       shell: bash
 
     - name: Pull Docker Base Image Cache
