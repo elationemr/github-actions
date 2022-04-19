@@ -10,6 +10,21 @@ inputs:
     required: true
   aws-region:
     required: true
+  image_tags:
+    description: |
+      An optional comma separated list of tags to apply to the image.
+      When not provided, the commit SHA and branch name will be used for tagging
+      the image.
+    required: false
+    default: ""
+  default-cache-tag:
+    description: An image tag that should be pulled by Docker for improved caching.
+    required: false
+    default: "main"
+  path:
+    description: Path to the directory with Docker image resources.
+    required: false
+    default: "."
 outputs:
   image:
     description: "The URI for the Docker image in ECR"
@@ -27,6 +42,7 @@ runs:
         aws-access-key-id: ${{ inputs.aws-access-key-id }}
         aws-secret-access-key: ${{ inputs.aws-secret-access-key }}
         aws-region: ${{ inputs.aws-region }}
+        mask-aws-account-id: 'no'
 
     - name: Login to Amazon ECR
       id: login-ecr
@@ -37,27 +53,52 @@ runs:
       run: aws ecr describe-repositories --repository-names ${{ inputs.ecr-repository }} || aws ecr create-repository --repository-name ${{ inputs.ecr-repository }}
       shell: bash
 
+    - name: Determine image tags
+      run: |
+        image_tags="${{ inputs.image_tags }}"
+        if [ -z "$image_tags" ]
+        then
+          branch_tag=$(echo ${GITHUB_REF#refs/heads/} | sed 's/\//_/g' | sed 's/\\/_/g')
+          image_tag="${{ github.sha }}"
+          image_tags="$branch_tag,$image_tag"
+        fi
+        echo "IMAGE_TAGS=$image_tags" >> $GITHUB_ENV
+      shell: bash
+
     - name: Pull Docker Base Image Cache
       env:
         ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
-        IMAGE_TAG: ${{ github.sha }}
-        MAIN_BRANCH: main
+        IMAGE_TAGS: ${{ env.IMAGE_TAGS }}
+        DEFAULT_CACHE_TAG: ${{ inputs.default-cache-tag }}
       run: |
-        export BRANCH_TAG=$(echo ${GITHUB_REF#refs/heads/} | sed 's/\//_/g' | sed 's/\\/_/g')
-        CACHE_TAG=$BRANCH_TAG
-        docker pull ${AWS_REGISTRY_URL}/$ECR_REGISTRY:$CACHE_TAG || export CACHE_TAG=$MAIN_BRANCH && docker pull ${AWS_REGISTRY_URL}/$ECR_REGISTRY:$CACHE_TAG || true
+        cache_tags="$IMAGE_TAGS,$DEFAULT_CACHE_TAG"
+
+        # Iterate through all the tags until a successful pull
+        for tag in ${cache_tags//,/ }
+        do
+          docker pull $ECR_REGISTRY/${{ inputs.ecr-repository }}:$tag && echo "CACHE_TAG=$tag" >> $GITHUB_ENV && break || true
+        done
       shell: bash
 
     - name: Build, tag, and push image to Amazon ECR
       id: build-image
       env:
         ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
-        IMAGE_TAG: ${{ github.sha }}
+        GIT_SHA: ${{ github.sha }}
+        CACHE_TAG: ${{ env.CACHE_TAG }}
+        DOCKER_PATH: ${{ inputs.path }}
+        IMAGE_TAGS: ${{ env.IMAGE_TAGS }}
       run: |
-        export BRANCH_TAG=$(echo ${GITHUB_REF#refs/heads/} | sed 's/\//_/g' | sed 's/\\/_/g')
-        docker build --build-arg AWS_ACCESS_KEY_ID=${{ inputs.aws-access-key-id }} --build-arg AWS_SECRET_ACCESS_KEY=${{ inputs.aws-secret-access-key }} --build-arg AWS_DEFAULT_REGION=${{ inputs.aws-region }} --cache-from ${AWS_REGISTRY_URL}/${{ inputs.ecr-repository }}:$CACHE_TAG -t $ECR_REGISTRY/${{ inputs.ecr-repository }}:$IMAGE_TAG -t $ECR_REGISTRY/${{ inputs.ecr-repository }}:$BRANCH_TAG .
-        docker push $ECR_REGISTRY/${{ inputs.ecr-repository }}:$IMAGE_TAG
-        docker push $ECR_REGISTRY/${{ inputs.ecr-repository }}:$BRANCH_TAG
-        echo "::set-output name=image::$ECR_REGISTRY/${{ inputs.ecr-repository }}:$IMAGE_TAG"
-        echo "::set-output name=image_tag::$IMAGE_TAG"
+        internal_tag="${{ inputs.ecr-repository }}:internal-${GIT_SHA}-$(date +%s)"
+
+        docker build --build-arg AWS_ACCESS_KEY_ID=${{ inputs.aws-access-key-id }} --build-arg AWS_SECRET_ACCESS_KEY=${{ inputs.aws-secret-access-key }} --build-arg AWS_DEFAULT_REGION=${{ inputs.aws-region }} --cache-from ${ECR_REGISTRY}/${{ inputs.ecr-repository }}:$CACHE_TAG -t ${internal_tag} ${DOCKER_PATH}
+
+        for tag in ${IMAGE_TAGS//,/ }
+        do
+          ecr_image="$ECR_REGISTRY/${{ inputs.ecr-repository }}:$tag"
+          docker tag $internal_tag $ecr_image
+          docker push $ecr_image
+          echo "::set-output name=image::$ECR_REGISTRY/${{ inputs.ecr-repository }}:$tag"
+          echo "::set-output name=image_tag::$tag"
+        done
       shell: bash
