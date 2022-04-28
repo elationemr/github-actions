@@ -1,0 +1,28 @@
+name: "service deployment"
+description: "Deploys a service to a given environment and runs applicable smoke tests."
+inputs:
+  environment:
+    description: "The name of the environment to push to."
+    required: true
+  service_name:
+    description: "The general service name."
+    required: true
+runs:
+  using: "composite"
+  steps:
+    - name: Deploy to ${{ inputs.environment }} 
+      run: Apply ${{ inputs.environment }} infrastructure
+      working_directory: ./terraform
+      run: |
+        terraform workspace select ${{ service_name }}
+        terraform apply -auto-approve -no-color
+      shell: bash
+    - name: Update Kustomize patch file.
+      working_directory: ./k8s/${{ inputs.environment }}
+      run: |
+          sed -i "s#value: .*#value: ${{ steps.build-and-push-image.outputs.image }}#" image.patch.yaml
+          git add image.patch.yaml
+          git commit -m "CD: update dev image [skip ci]"
+          git push
+      shell: bash
+    # TODO: Add smoke testing steps + config here.
