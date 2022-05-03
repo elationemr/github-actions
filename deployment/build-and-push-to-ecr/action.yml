@@ -102,7 +102,7 @@ runs:
         internal_tag="${{ inputs.ecr-repository }}:internal-${GIT_SHA}-$(date +%s)"
 
         docker build --build-arg AWS_ACCESS_KEY_ID=${{ inputs.aws-access-key-id }} --build-arg AWS_SECRET_ACCESS_KEY=${{ inputs.aws-secret-access-key }} --build-arg AWS_DEFAULT_REGION=${{ inputs.aws-region }} --cache-from ${ECR_REGISTRY}/${{ inputs.ecr-repository }}:$CACHE_TAG -t ${internal_tag} ${DOCKER_PATH}
-        if [ "${{inputs.push_image}}" -eq "true" ]; then
+        if [ "${{inputs.push_image}}" == "true" ]; then
           for tag in ${IMAGE_TAGS//,/ }
           do
             ecr_image="$ECR_REGISTRY/${{ inputs.ecr-repository }}:$tag"
