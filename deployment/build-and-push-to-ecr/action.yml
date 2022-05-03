@@ -25,6 +25,10 @@ inputs:
     description: Path to the directory with Docker image resources.
     required: false
     default: "."
+  push_image:
+    description: Toggles whether the Docker image is pushed to ECR.
+    default: true
+    required: false
 outputs:
   image:
     description: "The URI for the Docker image in ECR"
@@ -92,13 +96,14 @@ runs:
         internal_tag="${{ inputs.ecr-repository }}:internal-${GIT_SHA}-$(date +%s)"
 
         docker build --build-arg AWS_ACCESS_KEY_ID=${{ inputs.aws-access-key-id }} --build-arg AWS_SECRET_ACCESS_KEY=${{ inputs.aws-secret-access-key }} --build-arg AWS_DEFAULT_REGION=${{ inputs.aws-region }} --cache-from ${ECR_REGISTRY}/${{ inputs.ecr-repository }}:$CACHE_TAG -t ${internal_tag} ${DOCKER_PATH}
-
-        for tag in ${IMAGE_TAGS//,/ }
-        do
-          ecr_image="$ECR_REGISTRY/${{ inputs.ecr-repository }}:$tag"
-          docker tag $internal_tag $ecr_image
-          docker push $ecr_image
-          echo "::set-output name=image::$ECR_REGISTRY/${{ inputs.ecr-repository }}:$tag"
-          echo "::set-output name=image_tag::$tag"
-        done
+        if [ "${{inputs.push_image}}" -eq "true" ]; then
+          for tag in ${IMAGE_TAGS//,/ }
+          do
+            ecr_image="$ECR_REGISTRY/${{ inputs.ecr-repository }}:$tag"
+            docker tag $internal_tag $ecr_image
+            docker push $ecr_image
+            echo "::set-output name=image::$ECR_REGISTRY/${{ inputs.ecr-repository }}:$tag"
+            echo "::set-output name=image_tag::$tag"
+          done
+        fi
       shell: bash
