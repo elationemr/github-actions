@@ -29,6 +29,10 @@ inputs:
     description: Toggles whether the Docker image is pushed to ECR.
     default: true
     required: false
+  create_ecr:
+    description: Create an ECR repo if one doesn't exist already.
+    default: true
+    required: false
 outputs:
   image:
     description: "The URI for the Docker image in ECR"
@@ -53,9 +57,11 @@ runs:
       uses: aws-actions/amazon-ecr-login@v1
 
     - name: Create ECR Repo if it doesn't exist
+      if: ${{ inputs.create_ecr }} == true
       id: create-ecr-repo
       run: aws ecr describe-repositories --repository-names ${{ inputs.ecr-repository }} || aws ecr create-repository --repository-name ${{ inputs.ecr-repository }}
       shell: bash
+
 
     - name: Determine image tags
       run: |
