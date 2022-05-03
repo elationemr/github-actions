@@ -111,5 +111,7 @@ runs:
             echo "::set-output name=image::$ECR_REGISTRY/${{ inputs.ecr-repository }}:$tag"
             echo "::set-output name=image_tag::$tag"
           done
+        else
+          echo "Skipping tag and push process."
         fi
       shell: bash
