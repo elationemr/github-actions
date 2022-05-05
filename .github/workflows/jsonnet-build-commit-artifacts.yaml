@@ -43,7 +43,7 @@ jobs:
       # Install jb and download assets
       - run: go install -a github.com/jsonnet-bundler/jsonnet-bundler/cmd/jb@latest && rm -rf vendor && jb install
       - run: ${{ inputs.executable }} 
-      - uses: stefanzweifel/git-auto-commit-action@v4
-        with:
-          commit_message: "Updated files from Jsonnet run."
-          file_pattern: ./${{ inputs.out }}
+      - run: |
+          git config --global user.name "auto-commit"
+          git config --global user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git commit -am "Updated files from Jsonnet run." && git push origin $HEAD:${{ github.head_ref }} || true
