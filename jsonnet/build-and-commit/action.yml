@@ -40,9 +40,7 @@ runs:
     - run: ${{ inputs.executable }} 
       shell: bash
       working-directory: ${{ inputs.path }}
-    - run: |
-        git config --global user.name "auto-commit"
-        git config --global user.email '41898282+github-actions[bot]@users.noreply.github.com'
-        git commit -am "Updated files from Jsonnet run." && git push origin $HEAD:${{ github.head_ref }} || true
-      shell: bash
-      working-directory: ${{ inputs.path }}
+    - uses: elationemr/github-actions/git/commit@main
+      with:   
+        path: ${{ inputs.path }}
+        message: "Updated files from Jsonnet run."      

@@ -1,0 +1,23 @@
+name: "Git Commit"
+description: "Commits all changes in the given working directory."
+inputs:
+  path:
+    description: "Path that you desire having files added from."
+    type: string
+    required: false
+    path: .
+  message:
+    description: "Commit message."
+    required: false
+    type: string
+    default: "Updated from Github Actions."
+runs:
+  using: "composite"
+  steps:
+    - run: |
+        git config --global user.name "auto-commit"
+        git config --global user.email '41898282+github-actions[bot]@users.noreply.github.com'
+        git add .
+        git commit -m "${{ inputs.message }}" && git push origin $HEAD:${{ github.head_ref }} || true
+      shell: bash
+      working-directory: ${{ inputs.path }}
