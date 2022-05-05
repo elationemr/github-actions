@@ -37,11 +37,10 @@ jobs:
       - uses: actions/setup-go@v3
         with:
           go-version: ${{ inputs.golang-version }}
-      - uses: webfactory/ssh-agent@v0.5.4
-        with:
-          ssh-private-key: ${{ secrets.deploy_key }}
-      # Install jb and download assets
-      - run: go install -a github.com/jsonnet-bundler/jsonnet-bundler/cmd/jb@latest && rm -rf vendor && jb install
+      - run: |
+          eval `ssh-agent`
+          ssh-add - <<< "${{ secrets.deploy_key }}"
+          go install -a github.com/jsonnet-bundler/jsonnet-bundler/cmd/jb@latest && rm -rf vendor && jb install
       - run: ${{ inputs.executable }} 
       - uses: stefanzweifel/git-auto-commit-action@v4
         with:
