@@ -28,7 +28,7 @@ inputs:
   create_repo:
     description: Tries to create the underyling ECR repo if it doesn't already exist.
     default: true
-    type: bool
+    type: boolean
     required: false
 outputs:
   image:
@@ -55,9 +55,13 @@ runs:
 
     - name: Create ECR Repo if it doesn't exist
       id: create-ecr-repo
-      run: aws ecr describe-repositories --repository-names ${{ inputs.ecr-repository }} || aws ecr create-repository --repository-name ${{ inputs.ecr-repository }}
+      run: | 
+        if [[ "${{ inputs.create_repo }}" == "true" ]]; then
+          aws ecr describe-repositories --repository-names ${{ inputs.ecr-repository }} || aws ecr create-repository --repository-name ${{ inputs.ecr-repository }}
+        else
+          echo "Skipping create-ecr-repo"
+        fi
       shell: bash
-      if: ${{ inputs.create_repo == true }} 
 
     - name: Determine image tags
       run: |
