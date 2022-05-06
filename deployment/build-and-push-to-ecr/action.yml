@@ -25,6 +25,11 @@ inputs:
     description: Path to the directory with Docker image resources.
     required: false
     default: "."
+  create_repo:
+    description: Tries to create the underyling ECR repo if it doesn't already exist.
+    default: true
+    type: bool
+    required: false
 outputs:
   image:
     description: "The URI for the Docker image in ECR"
@@ -52,6 +57,7 @@ runs:
       id: create-ecr-repo
       run: aws ecr describe-repositories --repository-names ${{ inputs.ecr-repository }} || aws ecr create-repository --repository-name ${{ inputs.ecr-repository }}
       shell: bash
+      if: ${{ inputs.create_repo == true }} 
 
     - name: Determine image tags
       run: |
