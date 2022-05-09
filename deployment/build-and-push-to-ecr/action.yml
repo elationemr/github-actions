@@ -55,12 +55,8 @@ runs:
 
     - name: Create ECR Repo if it doesn't exist
       id: create-ecr-repo
-      run: | 
-        if [[ "${{ inputs.create_repo }}" == "true" ]]; then
-          aws ecr describe-repositories --repository-names ${{ inputs.ecr-repository }} || aws ecr create-repository --repository-name ${{ inputs.ecr-repository }}
-        else
-          echo "Skipping create-ecr-repo"
-        fi
+      if: inputs.create_repo == 'true'
+      run: aws ecr describe-repositories --repository-names ${{ inputs.ecr-repository }} || aws ecr create-repository --repository-name ${{ inputs.ecr-repository }}
       shell: bash
 
     - name: Determine image tags
