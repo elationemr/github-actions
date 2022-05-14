@@ -23,10 +23,16 @@ inputs:
   deploy_key:
     required: false
     description: "Deploy key used by jsonnet-bundler(jb) install the latest source code."
+  checkout_ref:
+    required: false
+    description: "The ref to checkout for the Git repo that the executable is run within."
+    default: 'main'
 runs:
   using: "composite"
   steps:
     - uses: actions/checkout@v2
+      with:
+        ref: ${{ inputs.checkout_ref }} 
     - uses: actions/setup-go@v3
       with:
         go-version: ${{ inputs.golang-version }}
