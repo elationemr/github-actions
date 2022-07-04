@@ -30,13 +30,46 @@ inputs:
     default: true
     type: boolean
     required: false
+
+  # AWS credentials
+  pass-aws-creds-build-args:
+    description: |
+      Indicates whether the AWS credentials should be passed to the docker build
+      command as --build-arg
+    default: true
+    type: boolean
+    required: false
+
+  # CodeArtifact
+  pass-codeartifact-token:
+    description: |
+      Indicates whether to obtain a CodeArtifact token and pass it to the docker build
+      command as a secret named CODEARTIFACT_AUTH_TOKEN
+    default: false
+    type: boolean
+    required: false
+  codeartifact-region:
+    description: AWS region of the CodeArtifact repository
+    default: us-west-2
+    type: string
+    required: false
+  codeartifact-domain:
+    description: Name of the CodeArtifact repository domain
+    default: el8-global
+    type: string
+    required: false
+  codeartifact-domain-owner:
+    description: AWS owner account of the CodeArtifact repository
+    default: ""
+    type: string
+    required: false
 outputs:
   image:
     description: "The URI for the Docker image in ECR"
-    value: ${{ steps.build-image.outputs.image }}
+    value: ${{ steps.tag-and-push.outputs.image }}
   image_tag:
     description: "The tag based on gitsha that the image is tagged with in ECR"
-    value: ${{ steps.build-image.outputs.image_tag }}
+    value: ${{ steps.tag-and-push.outputs.image_tag }}
 runs:
   using: "composite"
   steps:
@@ -86,23 +119,64 @@ runs:
         done
       shell: bash
 
-    - name: Build, tag, and push image to Amazon ECR
-      id: build-image
+    - name: Generate internal Docker tag
+      id: generate-internal-tag
+      env:
+        GIT_SHA: ${{ github.sha }}
+      run: |
+        echo "::set-output name=internal_tag::${{ inputs.ecr-repository }}:internal-${GIT_SHA}-$(date +%s)"
+      shell: bash
+
+    - name: Build
+      id: build-image-with-aws-creds
       env:
         ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
-        GIT_SHA: ${{ github.sha }}
+        INTERNAL_TAG: ${{ steps.generate-internal-tag.outputs.internal_tag }}
         CACHE_TAG: ${{ env.CACHE_TAG }}
         DOCKER_PATH: ${{ inputs.path }}
+      run: |
+        # Constructing the docker build command according to the input
+        docker_build_cmd="docker build --cache-from ${ECR_REGISTRY}/${{ inputs.ecr-repository }}:$CACHE_TAG"
+
+        # Input: pass-aws-creds-build-args
+        if [[ "${{ inputs.pass-aws-creds-build-args }}" == "true" ]]; then
+          docker_build_cmd+=" --build-arg AWS_ACCESS_KEY_ID=${{ inputs.aws-access-key-id }}"
+          docker_build_cmd+=" --build-arg AWS_SECRET_ACCESS_KEY=${{ inputs.aws-secret-access-key }}"
+          docker_build_cmd+=" --build-arg AWS_DEFAULT_REGION=${{ inputs.aws-region }}"
+        fi
+
+        # Input: pass-codeartifact-token
+        if [[ "${{ inputs.pass-codeartifact-token }}" == "true" ]]; then
+          export CODEARTIFACT_AUTH_TOKEN=$(\
+            AWS_ACCESS_KEY_ID=${{ inputs.aws-access-key-id }} \
+            AWS_SECRET_ACCESS_KEY=${{ inputs.aws-secret-access-key }} \
+            aws --region ${{ inputs.codeartifact-region}} \
+              codeartifact get-authorization-token \
+              --domain ${{ inputs.codeartifact-domain }} \
+              --domain-owner ${{ inputs.codeartifact-domain-owner }} \
+              --query authorizationToken \
+              --output text)
+          export DOCKER_BUILDKIT=1
+          
+          docker_build_cmd+=" --secret id=CODEARTIFACT_AUTH_TOKEN,env=CODEARTIFACT_AUTH_TOKEN"
+        fi
+
+        docker_build_cmd+=" -t ${INTERNAL_TAG} ${DOCKER_PATH}"
+
+        eval $docker_build_cmd
+      shell: bash
+
+    - name: Tag and Push to ECR
+      id: tag-and-push
+      env:
+        ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+        INTERNAL_TAG: ${{ steps.generate-internal-tag.outputs.internal_tag }}
         IMAGE_TAGS: ${{ env.IMAGE_TAGS }}
       run: |
-        internal_tag="${{ inputs.ecr-repository }}:internal-${GIT_SHA}-$(date +%s)"
-
-        docker build --build-arg AWS_ACCESS_KEY_ID=${{ inputs.aws-access-key-id }} --build-arg AWS_SECRET_ACCESS_KEY=${{ inputs.aws-secret-access-key }} --build-arg AWS_DEFAULT_REGION=${{ inputs.aws-region }} --cache-from ${ECR_REGISTRY}/${{ inputs.ecr-repository }}:$CACHE_TAG -t ${internal_tag} ${DOCKER_PATH}
-
         for tag in ${IMAGE_TAGS//,/ }
         do
           ecr_image="$ECR_REGISTRY/${{ inputs.ecr-repository }}:$tag"
-          docker tag $internal_tag $ecr_image
+          docker tag $INTERNAL_TAG $ecr_image
           docker push $ecr_image
           echo "::set-output name=image::$ECR_REGISTRY/${{ inputs.ecr-repository }}:$tag"
           echo "::set-output name=image_tag::$tag"
