@@ -158,7 +158,7 @@ runs:
               --output text)
           export DOCKER_BUILDKIT=1
           
-          docker_build_cmd+=" --secret id=CODEARTIFACT_AUTH_TOKEN,env=CODEARTIFACT_AUTH_TOKEN"
+          docker_build_cmd+=" --build-arg BUILDKIT_INLINE_CACHE=1 --secret id=CODEARTIFACT_AUTH_TOKEN,env=CODEARTIFACT_AUTH_TOKEN"
         fi
 
         docker_build_cmd+=" -t ${INTERNAL_TAG} ${DOCKER_PATH}"
