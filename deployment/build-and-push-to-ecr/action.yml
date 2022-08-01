@@ -17,10 +17,6 @@ inputs:
       the image.
     required: false
     default: ""
-  default-cache-tag:
-    description: An image tag that should be pulled by Docker for improved caching.
-    required: false
-    default: "main"
   path:
     description: Path to the directory with Docker image resources.
     required: false
@@ -30,6 +26,18 @@ inputs:
     default: true
     type: boolean
     required: false
+  
+  # Cache
+  default-cache-tag:
+    description: An image tag that should be pulled by Docker for improved caching.
+    type: string
+    required: false
+    default: "main"
+  cache-targets:
+    description: A comma separated list of Docker targets that need to be cached individually.
+    type: string
+    required: false
+    default: ""
 
   # AWS credentials
   pass-aws-creds-build-args:
@@ -66,10 +74,10 @@ inputs:
 outputs:
   image:
     description: "The URI for the Docker image in ECR"
-    value: ${{ steps.tag-and-push.outputs.image }}
+    value: ${{ steps.build.outputs.image }}
   image_tag:
     description: "The tag based on gitsha that the image is tagged with in ECR"
-    value: ${{ steps.tag-and-push.outputs.image_tag }}
+    value: ${{ steps.build.outputs.image_tag }}
 runs:
   using: "composite"
   steps:
@@ -104,39 +112,26 @@ runs:
         echo "IMAGE_TAGS=$image_tags" >> $GITHUB_ENV
       shell: bash
 
-    - name: Pull Docker Base Image Cache
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@v2
+
+    - name: Build & Push
+      id: build
       env:
         ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
         IMAGE_TAGS: ${{ env.IMAGE_TAGS }}
         DEFAULT_CACHE_TAG: ${{ inputs.default-cache-tag }}
-      run: |
-        cache_tags="$IMAGE_TAGS,$DEFAULT_CACHE_TAG"
-
-        # Iterate through all the tags until a successful pull
-        for tag in ${cache_tags//,/ }
-        do
-          docker pull $ECR_REGISTRY/${{ inputs.ecr-repository }}:$tag && echo "CACHE_TAG=$tag" >> $GITHUB_ENV && break || true
-        done
-      shell: bash
-
-    - name: Generate internal Docker tag
-      id: generate-internal-tag
-      env:
-        GIT_SHA: ${{ github.sha }}
-      run: |
-        echo "::set-output name=internal_tag::${{ inputs.ecr-repository }}:internal-${GIT_SHA}-$(date +%s)"
-      shell: bash
-
-    - name: Build
-      id: build-image-with-aws-creds
-      env:
-        ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
-        INTERNAL_TAG: ${{ steps.generate-internal-tag.outputs.internal_tag }}
-        CACHE_TAG: ${{ env.CACHE_TAG }}
         DOCKER_PATH: ${{ inputs.path }}
       run: |
         # Constructing the docker build command according to the input
-        docker_build_cmd="docker build --cache-from ${ECR_REGISTRY}/${{ inputs.ecr-repository }}:$CACHE_TAG"
+        docker_build_cmd="docker buildx build --build-arg BUILDKIT_INLINE_CACHE=1"
+
+        # Cache sources
+        cache_tags="$IMAGE_TAGS,$DEFAULT_CACHE_TAG"
+        for tag in ${cache_tags//,/ }
+        do
+          docker_build_cmd+=" --cache-from $ECR_REGISTRY/${{ inputs.ecr-repository }}:$tag"
+        done
 
         # Input: pass-aws-creds-build-args
         if [[ "${{ inputs.pass-aws-creds-build-args }}" == "true" ]]; then
@@ -156,29 +151,36 @@ runs:
               --domain-owner ${{ inputs.codeartifact-domain-owner }} \
               --query authorizationToken \
               --output text)
-          export DOCKER_BUILDKIT=1
           
-          docker_build_cmd+=" --build-arg BUILDKIT_INLINE_CACHE=1 --secret id=CODEARTIFACT_AUTH_TOKEN,env=CODEARTIFACT_AUTH_TOKEN"
+          docker_build_cmd+=" --secret id=CODEARTIFACT_AUTH_TOKEN,env=CODEARTIFACT_AUTH_TOKEN"
         fi
 
-        docker_build_cmd+=" -t ${INTERNAL_TAG} ${DOCKER_PATH}"
+        # Building individual targets one by one and pushing them under the "cache-" tags.
+        # This is a workaround for pushing caches into ECR that doesn't support
+        # BuildKit's mode=max when building multi-stage images.
+        # See https://github.com/aws/containers-roadmap/issues/876
+        cache_targets="${{ inputs.cache-targets }}"
+        for target in ${cache_targets//,/ }
+        do
+          docker_build_cmd+=" --cache-from $ECR_REGISTRY/${{ inputs.ecr-repository }}:cache-$target"
+        done
 
-        eval $docker_build_cmd
-      shell: bash
+        for target in ${cache_targets//,/ }
+        do
+          docker_target_build_cmd="$docker_build_cmd --target $target -t $ECR_REGISTRY/${{ inputs.ecr-repository }}:cache-$target --push ${DOCKER_PATH}"
+          echo $docker_target_build_cmd
+          eval $docker_target_build_cmd
+        done
 
-    - name: Tag and Push to ECR
-      id: tag-and-push
-      env:
-        ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
-        INTERNAL_TAG: ${{ steps.generate-internal-tag.outputs.internal_tag }}
-        IMAGE_TAGS: ${{ env.IMAGE_TAGS }}
-      run: |
         for tag in ${IMAGE_TAGS//,/ }
         do
-          ecr_image="$ECR_REGISTRY/${{ inputs.ecr-repository }}:$tag"
-          docker tag $INTERNAL_TAG $ecr_image
-          docker push $ecr_image
+          docker_build_cmd+=" -t $ECR_REGISTRY/${{ inputs.ecr-repository }}:$tag"
           echo "::set-output name=image::$ECR_REGISTRY/${{ inputs.ecr-repository }}:$tag"
           echo "::set-output name=image_tag::$tag"
         done
+
+        docker_build_cmd+=" --push ${DOCKER_PATH}"
+
+        echo $docker_build_cmd
+        eval $docker_build_cmd
       shell: bash
